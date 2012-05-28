@@ -12,7 +12,6 @@ from libc.stdio cimport perror, fprintf, stderr
 #DTYPE = np.float64
 #ctypedef np.float64_t DTYPE_t
 
-# original constructor: value, next, width
 cdef struct Node:
     unsigned int value
     unsigned int nb_levels
@@ -36,7 +35,7 @@ cdef Node init_node(unsigned int value, unsigned int nb_levels):
 cdef class IndexableSkiplist:
     """Sorted collection supporting O(lg n) insertion, removal,
     and lookup by rank."""
-    cdef unsigned int maxlevels
+    cdef unsigned int max_levels
     cdef unsigned int size
     cdef Node head
 
@@ -47,9 +46,9 @@ cdef class IndexableSkiplist:
         terminator_node.value = 2**31
         terminator_node.nb_levels = 0
         self.size = 0
-        self.maxlevels = 1 + <unsigned int> (log(expected_size)/log(2))
-        head = init_node(0, self.maxlevels)
-        for i in range(self.maxlevels):
+        self.max_levels = 1 + <unsigned int> (log(expected_size)/log(2))
+        head = init_node(0, self.max_levels)
+        for i in range(self.max_levels):
             head.next[i] = terminator_node
             head.width[i] = 1
         self.head = head
@@ -63,9 +62,9 @@ cdef class IndexableSkiplist:
             raise StopIteration
         node = self.head
         i += 1
-        for level in range(self.maxlevels):
+        for level in range(self.max_levels):
             # Access levels in descending order
-            level = self.maxlevels - level - 1
+            level = self.max_levels - level - 1
             while node.width[level] <= i:
                 i -= node.width[level]
                 node = node.next[level]
@@ -77,39 +76,38 @@ cdef class IndexableSkiplist:
         # find first node on each level where node.next[levels].value > value
         cdef Node* chain 
         cdef Node node
-        cdef Node newnode
+        cdef Node new_node
         cdef unsigned int* steps_at_level
         cdef unsigned int level, d, steps
-        chain = <Node*> malloc(self.maxlevels * sizeof(Node))
-        steps_at_level = <unsigned int*> malloc(self.maxlevels
+        chain = <Node*> malloc(self.max_levels * sizeof(Node))
+        steps_at_level = <unsigned int*> malloc(self.max_levels
                                                 * sizeof(unsigned int))
         node = self.head
-        steps_at_level[0] = 0
         # Internally, we store values starting at 1, not 0, as 0 is our
         # head
         value += 1
-        for level in range(self.maxlevels):
+        for level in range(self.max_levels):
             # Access levels in descending order
-            level = self.maxlevels - level - 1
+            level = self.max_levels - level - 1
             steps_at_level[level] = 0
             while node.next[level].value <= value:
                 steps_at_level[level] += node.width[level]
                 node = node.next[level]
             chain[level] = node
 
-        # insert a link to the newnode at each level
-        d = min(self.maxlevels,
+        # insert a link to the new_node at each level
+        d = min(self.max_levels,
                 1 - <int> ceil(log(rand()/<float>RAND_MAX)/log(2.)))
-        newnode = init_node(value, d)
+        new_node = init_node(value, d)
         steps = 0
         for level in range(d):
-            prevnode = chain[level]
-            newnode.next[level] = prevnode.next[level]
-            prevnode.next[level] = newnode
-            newnode.width[level] = prevnode.width[level] - steps
-            prevnode.width[level] = steps + 1
+            prev_node = chain[level]
+            new_node.next[level] = prev_node.next[level]
+            prev_node.next[level] = new_node
+            new_node.width[level] = prev_node.width[level] - steps
+            prev_node.width[level] = steps + 1
             steps += steps_at_level[level]
-        for level in range(d, self.maxlevels):
+        for level in range(d, self.max_levels):
             chain[level].width[level] += 1
         self.size += 1
 
@@ -121,12 +119,12 @@ cdef class IndexableSkiplist:
         # Internally, we store values starting at 1, not 0, as 0 is our
         # head
         value += 1
-        chain = <Node*> malloc(self.maxlevels * sizeof(Node))
+        chain = <Node*> malloc(self.max_levels * sizeof(Node))
 
         # First find the node that needs to be removed
-        for level in range(self.maxlevels):
+        for level in range(self.max_levels):
             # Access levels in descending order
-            level = self.maxlevels - level - 1
+            level = self.max_levels - level - 1
             while node.next[level].value < value:
                 node = node.next[level]
             chain[level] = node
@@ -136,10 +134,10 @@ cdef class IndexableSkiplist:
         # remove one link at each level
         d = chain[0].next[0].nb_levels
         for level in range(d):
-            prevnode = chain[level]
-            prevnode.width[level] += prevnode.next[level].width[level] - 1
-            prevnode.next[level] = prevnode.next[level].next[level]
-        for level in range(d, self.maxlevels):
+            prev_node = chain[level]
+            prev_node.width[level] += prev_node.next[level].width[level] - 1
+            prev_node.next[level] = prev_node.next[level].next[level]
+        for level in range(d, self.max_levels):
             chain[level].width[level] -= 1
         self.size -= 1
 
