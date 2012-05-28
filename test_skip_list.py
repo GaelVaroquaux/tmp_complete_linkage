@@ -1,33 +1,44 @@
 from nose.tools import assert_equal
 
-from skip_list import IndexableSkiplist
-#from skip_list_ import IndexableSkiplist
+import numpy as np
 
-def test_skip_list():
-    slist = IndexableSkiplist()
-    l = [i**2 for i in range(30)]
+from skip_list import IndexableSkiplist
+
+#def test_skip_list():
+if 1:
+    N = 5
+    indices = np.arange(N)**2
+    values = np.random.randint(1000, size=N).astype(np.float)
     # Test trivial insertion
-    for i in l:
-        slist.insert(i)
-    assert_equal(list(slist), l)
-    slist.insert(2)
-    l.insert(2, 2)
-    assert_equal(list(slist), l)
+    slist = IndexableSkiplist()
+    slist.multiple_insert(indices, values)
+    assert_equal(list(slist.iteritems()), zip(indices, values))
+    assert_equal(len(slist), N)
+    # Test trivial insertion
+    print '** start insersions'
+    for i, v in zip(indices, values):
+        #print 'Trying to put %i in position %i, where there is %i' % (v + 1,
+        #        i + 1, slist[i + 1])
+        slist[i + 1] = v - 1
+        print list(slist.iteritems())
+        assert_equal(slist[i + 1], v - 1)
+
+    l = list(slist.iteritems())
     # Test removal of elements
-    slist.remove(l[-2])
+    slist.pop(l[-2][0])
     l.remove(l[-2])
-    assert_equal(list(slist), l)
+    assert_equal(list(slist.iteritems()), l)
+    slist.pop(l[1][0])
     l.remove(l[1])
-    slist.remove(slist[1])
-    assert_equal(list(slist), l)
+    assert_equal(list(slist.iteritems()), l)
+    slist.pop(l[1][0])
     l.remove(l[1])
-    slist.remove(slist[1])
-    assert_equal(list(slist), l)
+    assert_equal(list(slist.iteritems()), l)
     # Test random insertion of elements
-    l.append(3)
+    l.append((3, 6.))
     l.sort()
-    slist.insert(3)
-    assert_equal(list(slist), l)
+    slist[3] = 6.
+    assert_equal(list(slist.iteritems()), l)
 
 
 if __name__ == '__main__':
