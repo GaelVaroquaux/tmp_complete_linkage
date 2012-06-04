@@ -35,19 +35,18 @@ cdef pNode init_node(unsigned int index, unsigned int nb_levels,
     node.index = index 
     node.value = value
     node.nb_levels = nb_levels
-    # XXX: malloc means manual free
     node.next = <pNode*> malloc(nb_levels * sizeof(pNode))
     node.width = <unsigned int*> malloc(nb_levels
                                         * sizeof(unsigned int))
     return node
 
-# Allocate here, so that it gets allocated in the heap, and not on the
-# stack
-cdef Node terminator_node
-terminator_node.index = 2**31 - 1
-# A tracer
-terminator_node.value = 666
-terminator_node.nb_levels = 0
+cdef del_node(pNode node, int recursive=0):
+    if recursive and node.nb_levels != 0:
+            # We need to traverse the list only with the lowest level
+            del_node(node.next[0], 1)
+    free(node.next)
+    free(node.width)
+    free(node)
 
 
 cdef class IndexableSkiplist:
@@ -60,11 +59,15 @@ cdef class IndexableSkiplist:
     def __init__(self, unsigned int expected_size=100):
         cdef pNode head
         cdef unsigned int i
+        # A tracer
+        cdef pNode terminator_node
+        terminator_node = init_node(2**31 - 1, 0)
+
         self.size = 0
         self.max_levels = 1 + <unsigned int> (log(expected_size)/log(2))
         head = init_node(0, self.max_levels)
         for i in range(self.max_levels):
-            head.next[i] = &terminator_node
+            head.next[i] = terminator_node
             head.width[i] = 1
         self.head = head
 
@@ -84,7 +87,6 @@ cdef class IndexableSkiplist:
         chain = <pNode*> malloc(self.max_levels * sizeof(pNode))
         steps_at_level = <unsigned int*> malloc(self.max_levels
                                                 * sizeof(unsigned int))
-        fprintf(stderr, 'Inserting index %i, value %f\n', index, value)
         # Internally, we store indices starting at 1, not 0, as 0 is our
         # head
         index += 1
@@ -143,7 +145,6 @@ cdef class IndexableSkiplist:
         cdef float value
         cdef Node* node = self.head
         cdef unsigned int level, d
-        fprintf(stderr, 'Getting index %i\n', index)
         # Internally, we store indices starting at 1, not 0, as 0 is our
         # head
         index += 1
@@ -219,5 +220,11 @@ cdef class IndexableSkiplist:
         # Internally, we store indices starting at 1, not 0, as 0 is our head
         # thus we need to return arg_min - 1
         return arg_min - 1, min_value
+
+    def __dealloc__(self):
+        """ Frees the tree. This is called by Python when all the
+        references to the object are gone. """
+        del_node(self.head, 1)
+
 
 

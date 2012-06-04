@@ -15,12 +15,8 @@ if 1:
     assert_equal(list(slist.iteritems()), zip(indices, values))
     assert_equal(len(slist), N)
     # Test trivial insertion
-    print '** start insersions'
     for i, v in zip(indices, values):
-        #print 'Trying to put %i in position %i, where there is %i' % (v + 1,
-        #        i + 1, slist[i + 1])
         slist[i + 1] = v - 1
-        print list(slist.iteritems())
         assert_equal(slist[i + 1], v - 1)
 
     l = list(slist.iteritems())
