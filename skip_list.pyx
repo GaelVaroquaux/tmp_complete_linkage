@@ -40,6 +40,7 @@ cdef pNode init_node(unsigned int index, unsigned int nb_levels,
                                         * sizeof(unsigned int))
     return node
 
+
 cdef del_node(pNode node, int recursive=0):
     if recursive and node.nb_levels != 0:
             # We need to traverse the list only with the lowest level
@@ -142,6 +143,7 @@ cdef class IndexableSkiplist:
     def _get_node(self, unsigned int index, unsigned int remove=0):
         # find first node on each level where node.next[levels].index >= index
         cdef pNode* chain
+        cdef pNode to_delete
         cdef float value
         cdef Node* node = self.head
         cdef unsigned int level, d
@@ -166,14 +168,14 @@ cdef class IndexableSkiplist:
         # link at each level
         if remove:
             d = chain[0].next[0].nb_levels
+            to_delete = chain[0].next[0]
             for level in range(d):
                 prev_node = chain[level]
                 prev_node.width[level] += prev_node.next[level].width[level] - 1
                 prev_node.next[level] = prev_node.next[level].next[level]
-            # XXX: We'll need to 'free' the removed node, and the
-            # correspondind width and next tables
             for level in range(d, self.max_levels):
                 chain[level].width[level] -= 1
+            del_node(to_delete)
             self.size -= 1
         free(chain)
         return value
