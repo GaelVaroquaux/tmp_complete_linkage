@@ -1,5 +1,10 @@
 import numpy as np
+from scipy import sparse
 from sklearn.metrics import euclidean_distances
+from skip_list import IndexableSkipList
+import sys
+
+
 
 #@profile
 def nn_chain_core_full(distances):
@@ -53,12 +58,84 @@ def nn_chain_core_full(distances):
     return children
 
 
+#@profile
+def nn_chain_core(distances):
+    n = len(distances)
+    distances = sparse.csr_matrix(distances)
+    # They will be at most 2*n nodes in the hierarchical clustering
+    # algorithm. We can preallocate and use arrays
+    #active = np.zeros(2*n, dtype=np.bool)
+    #active[:n] = 1
+    chain = list()
+    children = list()
+    # XXX: should this be a list, or a dict
+    distance_dict = dict()
+    for index, col in enumerate(distances):
+        # Need to be able to have an actual connectivity at some point:
+        # col being a sparse matrix
+        # Should catter for empty cols?
+        # Probably not: they should never occur
+        this_distance = IndexableSkipList(expected_size=2*n)
+        this_distance.multiple_insert(col.indices, col.data)
+        distance_dict[index] = this_distance
+    #big_distances = np.ones((2*n, 2*n))
+    #big_distances[:] = np.inf
+    #big_distances[:n, :n] = distances
+    #big_distances.flat[::2*n+1] = np.inf
+    for this_n in xrange(n, 2*n - 1):
+        if len(chain) < 4:
+            # Pick any 2 active elements to complete the chain
+            # The last element is active: it just got added
+            a = this_n - 1
+            b = this_n - 2
+            while not b in distance_dict:
+                b -= 1
+            chain = [a, ]
+        else:
+            a = chain[-4]
+            b = chain[-3]
+            chain = chain[:-3]
+        while True:
+            distance_a = distance_dict[a]
+            c, min_value = distance_a.argmin()
+            # XXX: it would be great if we could avoid accessing
+            # distance_a[b]
+            if min_value == distance_a._get_node(b, default=np.inf):
+                c = b
+                # There's probably an optimization possible for the
+                # next round
+            a, b = c, a
+            chain.append(a)
+            if len(chain) > 2 and a == chain[-3]:
+                break
+        children.append((a, b, distance_a[a]))
+        # Remove the nodes in the corresponding skip lists, and the
+        # corresponding skip_lists from the distance dictionary
+        del distance_dict[b]
+        new_distances = distance_dict.pop(a)
+        # Augment the distance matrix:
+        #new_distances = np.maximum(new_distances, distance_a)
+        for other_index, other_value in distance_a.iteritems():
+            new_distances[other_index] = max(
+                        new_distances._get_node(other_index, default=0),
+                        other_value)
+        distance_dict[this_n] = new_distances
+        for value in distance_dict.itervalues():
+            value._get_node(a, remove=1, default=0)
+            value._get_node(b, remove=1, default=0)
+        for index, value in new_distances.iteritems():
+            distance_dict[index][this_n] = value
+    return children
+
+
+
 if __name__ == '__main__':
-    N = 2000
+    N = 200
+    np.random.seed(0)
     X = np.random.random((N, 2))
     d = euclidean_distances(X)
 
-    L = nn_chain_core_full(d)
+    L = nn_chain_core(d)
     a, b, height = np.array(L).T
     #order = np.argsort(height, kind='mergesort')
     #a = a[order]

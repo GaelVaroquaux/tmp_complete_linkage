@@ -50,12 +50,13 @@ cdef del_node(pNode node, int recursive=0):
     free(node)
 
 
-cdef class IndexableSkiplist:
+cdef class IndexableSkipList:
     """Sorted collection supporting O(lg n) insertion, removal,
     and lookup by rank."""
     cdef unsigned int max_levels
     cdef unsigned int size
     cdef pNode head
+    cdef pNode terminator_node
 
     def __init__(self, unsigned int expected_size=100):
         cdef pNode head
@@ -66,11 +67,12 @@ cdef class IndexableSkiplist:
 
         self.size = 0
         self.max_levels = 1 + <unsigned int> (log(expected_size)/log(2))
-        head = init_node(0, self.max_levels)
+        head = init_node(0, self.max_levels, 2**31 - 1)
         for i in range(self.max_levels):
             head.next[i] = terminator_node
             head.width[i] = 1
         self.head = head
+        self.terminator_node = terminator_node
 
     def __len__(self):
         return self.size
@@ -129,6 +131,7 @@ cdef class IndexableSkiplist:
         cdef unsigned int i
         my_indices = np.asarray(indices).astype(np.int32)
         assert  my_indices.size == N
+        # XXX: might be faster if the values were sorted
         for i in range(N):
             self.__setitem__(indices[i], values[i])
 
@@ -140,7 +143,8 @@ cdef class IndexableSkiplist:
     def __getitem__(self, unsigned int index):
         return self._get_node(index, remove=0)
 
-    def _get_node(self, unsigned int index, unsigned int remove=0):
+    def _get_node(self, unsigned int index, unsigned int remove=0,
+                  default=None):
         # find first node on each level where node.next[levels].index >= index
         cdef pNode* chain
         cdef pNode to_delete
@@ -161,7 +165,10 @@ cdef class IndexableSkiplist:
             chain[level] = node
         if index != chain[0].next[0].index:
             free(chain)
-            raise KeyError('Not Found')
+            if default is None:
+                raise KeyError('Not Found: %i' % index)
+            else:
+                return default
         value = chain[0].next[0].value 
 
         # If we are removing, reorganize the link structure: remove one
@@ -208,20 +215,34 @@ cdef class IndexableSkiplist:
             # head
             yield node.index - 1, node.value
             node = node.next[0]
+        # XXX: probably needs a lock to avoid modifying the SkipLists
+        # while we are iterating on it
 
     def argmin(self):
         'Return the index of the smallest entry'
         cdef pNode node = self.head.next[0]
         cdef float min_value = node.value
-        cdef unsigned int arg_min = node.index
+        cdef int arg_min = node.index
         while node.nb_levels != 0:
-            node = node.next[0]
             if node.value <= min_value:
                 min_value = node.value
                 arg_min = node.index
+            node = node.next[0]
         # Internally, we store indices starting at 1, not 0, as 0 is our head
         # thus we need to return arg_min - 1
         return arg_min - 1, min_value
+
+
+    #--------------------------------------------------------------------------
+    # Operations with other SkipLists
+
+    #def max(self, IndexableSkipList other):
+    #    cdef pNode my_node = self.head.next[0]
+    #    cdef pNode other_node = other.head.next[0]
+    #    while my_node.nb_levels != 0 and other_node.nb_levels != 0:
+    #        # XXX: could be done faster by iterating lookups starting
+    #        # in the middle of the skiplist as in the __setitem__ code
+    #        my_node = node.next[0]
 
     def __dealloc__(self):
         """ Frees the tree. This is called by Python when all the
