@@ -64,6 +64,7 @@ def nn_chain_core(distances):
     if sparse.issparse(distances):
         distance_iter = ((d.indices, d.data)
                          for d in sparse.csr_matrix(distances))
+        vmax = 1 + distances.data.max()
     else:
         def distance_iter_():
             for i, col in enumerate(distances):
@@ -71,6 +72,7 @@ def nn_chain_core(distances):
                 indices = indices[indices != i]
                 yield indices, col[indices]
         distance_iter = distance_iter_()
+        vmax = 1 + distances.max()
     # They will be at most 2*n nodes in the hierarchical clustering
     # algorithm. We can preallocate and use arrays
     active = np.zeros(2*n, dtype=np.bool)
@@ -84,7 +86,7 @@ def nn_chain_core(distances):
         # col being a sparse matrix
         # Should catter for empty cols?
         # Probably not: they should never occur
-        this_distance = IndexableSkipList(expected_size=2*n)
+        this_distance = IndexableSkipList(expected_size=2*indices.size)
         this_distance.multiple_insert(indices, data)
         distance_dict[index] = this_distance
     print 'Distance matrix ready'
@@ -105,7 +107,11 @@ def nn_chain_core(distances):
         while True:
             distance_a = distance_dict[a]
             c, min_value = distance_a.argmin()
-            if min_value == distance_a._get_node(b, default=np.inf):
+            while not active[c]:
+                # Remove previously merged node lazily
+                distance_a._get_node(c, remove=1, default=0)
+                c, min_value = distance_a.argmin()
+            if active[b] and min_value == distance_a._get_node(b, default=vmax):
                 c = b
                 # There's probably an optimization possible for the
                 # next round
@@ -123,17 +129,20 @@ def nn_chain_core(distances):
         distance_dict[b] = None
         active[b] = False
         # Augment the distance matrix:
-        #new_distances = np.maximum(new_distances, distance_a)
         indices, values = distance_a.items()
         for other_index, other_value in zip(indices, values):
             new_distances[other_index] = max(
                         new_distances._get_node(other_index, default=0),
                         other_value)
+        indices, values = new_distances.items()
+        for index in indices:
+            if not active[index]:
+                new_distances._get_node(index, remove=1, default=0)
         distance_dict[this_n] = new_distances
         active[this_n] = True
-        for distance_list in distance_dict[active]:
-            distance_list._get_node(a, remove=1, default=0)
-            distance_list._get_node(b, remove=1, default=0)
+        #for distance_list in distance_dict[active]:
+        #    distance_list._get_node(a, remove=1, default=0)
+        #    distance_list._get_node(b, remove=1, default=0)
         indices, values = new_distances.items()
         for distance_list, value in zip(distance_dict[indices], values):
             distance_list[this_n] = value

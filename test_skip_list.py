@@ -2,7 +2,7 @@ from nose.tools import assert_equal
 
 import numpy as np
 
-from skip_list import IndexableSkiplist
+from skip_list import IndexableSkipList
 
 #def test_skip_list():
 if 1:
@@ -10,7 +10,7 @@ if 1:
     indices = np.arange(N)**2
     values = np.random.randint(1000, size=N).astype(np.float)
     # Test trivial insertion
-    slist = IndexableSkiplist()
+    slist = IndexableSkipList()
     slist.multiple_insert(indices, values)
     assert_equal(list(slist.iteritems()), zip(indices, values))
     assert_equal(len(slist), N)

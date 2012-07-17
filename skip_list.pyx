@@ -56,7 +56,9 @@ cdef class IndexableSkipList:
     cdef unsigned int max_levels
     cdef unsigned int size
     cdef pNode head
+    cdef pNode* chain_buffer
 
+    @cython.cdivision(True)
     def __init__(self, unsigned int expected_size=100):
         cdef pNode head
         cdef unsigned int i
@@ -71,6 +73,9 @@ cdef class IndexableSkipList:
             head.next[i] = terminator_node
             head.width[i] = 1
         self.head = head
+        # Initialize a buffer, so as not to have to reinitialize it for
+        # each call
+        self.chain_buffer = <pNode*> malloc(self.max_levels * sizeof(pNode))
 
     def __len__(self):
         return self.size
@@ -80,12 +85,10 @@ cdef class IndexableSkipList:
     @cython.cdivision(True)
     def __setitem__(self, unsigned int index, float value):
         # find first node on each level where node.next[levels].index > index
-        cdef pNode* chain 
         cdef Node* node = self.head
         cdef Node* new_node
         cdef unsigned int* steps_at_level
         cdef unsigned int level, d, steps
-        chain = <pNode*> malloc(self.max_levels * sizeof(pNode))
         steps_at_level = <unsigned int*> malloc(self.max_levels
                                                 * sizeof(unsigned int))
         # Internally, we store indices starting at 1, not 0, as 0 is our
@@ -100,7 +103,7 @@ cdef class IndexableSkipList:
             while node.next[level].index <= index:
                 steps_at_level[level] += node.width[level]
                 node = node.next[level]
-            chain[level] = node
+            self.chain_buffer[level] = node
         if node.index == index:
             # The index is already in our list
             node.value = value
@@ -111,16 +114,15 @@ cdef class IndexableSkipList:
             new_node = init_node(index, d, value)
             steps = 0
             for level in range(d):
-                prev_node = chain[level]
+                prev_node = self.chain_buffer[level]
                 new_node.next[level] = prev_node.next[level]
                 prev_node.next[level] = new_node
                 new_node.width[level] = prev_node.width[level] - steps
                 prev_node.width[level] = steps + 1
                 steps += steps_at_level[level]
             for level in range(d, self.max_levels):
-                chain[level].width[level] += 1
+                self.chain_buffer[level].width[level] += 1
             self.size += 1
-        free(chain)
         free(steps_at_level)
 
     @cython.boundscheck(False)
@@ -137,16 +139,12 @@ cdef class IndexableSkipList:
 
     #--------------------------------------------------------------------------
     # Accessing the elements
-    def pop(self, unsigned int index):
-        return self._get_node(index, remove=1)
-
     def __getitem__(self, unsigned int index):
         return self._get_node(index, remove=0)
 
-    def _get_node(self, unsigned int index, unsigned int remove=0,
+    cpdef _get_node(self, unsigned int index, unsigned int remove=0,
                   default=None):
         # find first node on each level where node.next[levels].index >= index
-        cdef pNode* chain
         cdef pNode to_delete
         cdef float value
         cdef Node* node = self.head
@@ -154,7 +152,6 @@ cdef class IndexableSkipList:
         # Internally, we store indices starting at 1, not 0, as 0 is our
         # head
         index += 1
-        chain = <pNode*> malloc(self.max_levels * sizeof(pNode))
 
         # First find the node
         for level in range(self.max_levels):
@@ -162,29 +159,24 @@ cdef class IndexableSkipList:
             level = self.max_levels - level - 1
             while node.next[level].index < index:
                 node = node.next[level]
-            chain[level] = node
-        if index != chain[0].next[0].index:
-            free(chain)
-            if default is None:
-                raise KeyError('Not Found: %i' % index)
-            else:
-                return default
-        value = chain[0].next[0].value 
+            self.chain_buffer[level] = node
+        if index != self.chain_buffer[0].next[0].index:
+            return default
+        value = self.chain_buffer[0].next[0].value 
 
         # If we are removing, reorganize the link structure: remove one
         # link at each level
         if remove:
-            d = chain[0].next[0].nb_levels
-            to_delete = chain[0].next[0]
+            d = self.chain_buffer[0].next[0].nb_levels
+            to_delete = self.chain_buffer[0].next[0]
             for level in range(d):
-                prev_node = chain[level]
+                prev_node = self.chain_buffer[level]
                 prev_node.width[level] += prev_node.next[level].width[level] - 1
                 prev_node.next[level] = prev_node.next[level].next[level]
             for level in range(d, self.max_levels):
-                chain[level].width[level] -= 1
+                self.chain_buffer[level].width[level] -= 1
             del_node(to_delete)
             self.size -= 1
-        free(chain)
         return value
 
     #--------------------------------------------------------------------------
