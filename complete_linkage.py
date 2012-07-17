@@ -58,6 +58,8 @@ def nn_chain_core_full(distances):
 
 #@profile
 def nn_chain_core(distances):
+    # Important hack: nodes are removed lazily, as the cost of removal
+    # from the skip list is too important
     n = distances.shape[0]
     # XXX: Being smart with iterators is probably creating more lines than it
     # is saving
@@ -92,6 +94,8 @@ def nn_chain_core(distances):
     print 'Distance matrix ready'
 
     for this_n in xrange(n, 2*n - 1):
+        print chain
+        print active[chain].astype(np.int)
         if len(chain) < 4:
             # Pick any 2 active elements to complete the chain
             # The last element is active: it just got added
@@ -111,17 +115,16 @@ def nn_chain_core(distances):
                 # Remove previously merged node lazily
                 distance_a._get_node(c, remove=1, default=0)
                 c, min_value = distance_a.argmin()
-            if active[b] and min_value == distance_a._get_node(b, default=vmax):
+            if not active[b]:
+                distance_a._get_node(b, remove=1, default=0)
+            elif min_value == distance_a._get_node(b, default=vmax):
                 c = b
-                # There's probably an optimization possible for the
-                # next round
             a, b = c, a
             chain.append(a)
             if len(chain) > 2 and a == chain[-3]:
                 break
         children.append((a, b, distance_a[a]))
-        # Remove the nodes in the corresponding skip lists, and the
-        # corresponding skip_lists from the distance dictionary
+        # Remove the corresponding skip_lists from the distance dictionary
         new_distances = distance_dict[a]
         distance_a = distance_dict[b]
         distance_dict[a] = None
@@ -154,6 +157,12 @@ def complete_linkage(X, connectivity=None, n_clusters=4):
     if connectivity is None:
         d = euclidean_distances(X)
     else:
+        connectivity = connectivity.copy()
+        # Remove the diagonal
+        mask = connectivity.row != connectivity.col
+        connectivity.row = connectivity.row[mask]
+        connectivity.col = connectivity.col[mask]
+        connectivity.data = connectivity.data[mask]
         d_ = X[connectivity.row]
         d_ -= X[connectivity.col]
         d_ **= 2
@@ -161,7 +170,7 @@ def complete_linkage(X, connectivity=None, n_clusters=4):
         # XXX: not necessary: complete_linkage is invariant by increasing
         # function
         d_ = np.sqrt(d_)
-        d = connectivity.copy()
+        d = connectivity
         d.data = d_
     L = nn_chain_core(d)
     a, b, height = np.array(L).T

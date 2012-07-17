@@ -247,6 +247,7 @@ cdef class IndexableSkipList:
         """ Frees the tree. This is called by Python when all the
         references to the object are gone. """
         del_node(self.head, 1)
+        free(self.chain_buffer)
 
 
 
