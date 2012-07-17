@@ -52,11 +52,10 @@ cdef del_node(pNode node, int recursive=0):
 
 cdef class IndexableSkipList:
     """Sorted collection supporting O(lg n) insertion, removal,
-    and lookup by rank."""
+       and lookup by index."""
     cdef unsigned int max_levels
     cdef unsigned int size
     cdef pNode head
-    cdef pNode terminator_node
 
     def __init__(self, unsigned int expected_size=100):
         cdef pNode head
@@ -72,14 +71,13 @@ cdef class IndexableSkipList:
             head.next[i] = terminator_node
             head.width[i] = 1
         self.head = head
-        self.terminator_node = terminator_node
 
     def __len__(self):
         return self.size
 
     #--------------------------------------------------------------------------
     # Setting elements
-    #@cython.cdivision(True)
+    @cython.cdivision(True)
     def __setitem__(self, unsigned int index, float value):
         # find first node on each level where node.next[levels].index > index
         cdef pNode* chain 
@@ -125,6 +123,8 @@ cdef class IndexableSkipList:
         free(chain)
         free(steps_at_level)
 
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
     def multiple_insert(self, indices, np.ndarray[DTYPE_t, ndim=1] values):
         cdef np.ndarray[ITYPE_t, ndim=1] my_indices
         cdef unsigned int N = values.size
@@ -207,16 +207,23 @@ cdef class IndexableSkipList:
         # head
         return node.index - 1, node.value
 
-    def iteritems(self):
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    def items(self):
         'Iterate over values in sorted order'
         cdef pNode node = self.head.next[0]
+        cdef np.ndarray[ITYPE_t, ndim=1] indices = np.empty(self.size,
+                                                            dtype=np.int32)
+        cdef np.ndarray[DTYPE_t, ndim=1] values = np.empty(self.size)
+        cdef unsigned int i = 0
         while node.nb_levels != 0:
             # Internally, we store indices starting at 1, not 0, as 0 is our
             # head
-            yield node.index - 1, node.value
+            indices[i] = node.index - 1
+            values[i] = node.value
+            i += 1
             node = node.next[0]
-        # XXX: probably needs a lock to avoid modifying the SkipLists
-        # while we are iterating on it
+        return indices, values
 
     def argmin(self):
         'Return the index of the smallest entry'
